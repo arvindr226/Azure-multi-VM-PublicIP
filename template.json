@@ -1,0 +1,302 @@
+{
+  "$schema": "https://schema.management.azure.com/schemas/2015-01-01/deploymentTemplate.json#",
+  "contentVersion": "1.0.0.0",
+  "parameters": {
+    "centosOSVersion": {
+      "type": "string",
+      "defaultValue": "7.4",
+      "allowedValues": [
+        "7.4"
+      ],
+      "metadata": {
+        "description": "The OS"
+      }
+    },
+    "numberOfVms": {
+      "type": "int",
+      "defaultValue": 3,
+      "minValue": 1,
+      "maxValue": 10,
+      "metadata": {
+        "description": "Number of VMs to provision"
+      }
+    },
+    "vmSize": {
+      "type": "string",
+      "defaultValue": "Standard_E16_v3",
+      "allowedValues": [
+        "Standard_E8_v3",
+        "Standard_E2_v3",
+        "Standard_D1",
+        "Standard_D4_v3",
+        "Standard_D32s_v3",
+        "Standard_E16_v3",
+        "Standard_E64_v3"
+      ],
+      "metadata": {
+        "description": "VM size"
+      }
+    }
+  },
+  "variables": {
+    "dnsLabelPrefix": "[concat(uniquestring('dns'))]",
+    "vmName": "k8s",
+    "adminUsername": "[concat('centos')]",
+    "sshKeyData": "ssh-rsa AAAAB3NzaC1yc2EAAAADAQABAAABAQCxgRtaRHjNVR1sxIB7l/g976nyerQRZkvVL2o50Hn6DR+pxWcFrtBdFEAz7k1Haur0cdtYM34vEdDUf7dWkgKzVzzTrYj7VS8WjA95vdjtrsOVkdrJ+c6F9+SqF6kXD2nBOQLq3/Qb8Jppb2Z+bRMasLq8Ui7Jgkqa20eFAs+FDfbquEVilHU/i2omoReie5tZ0tOH3AfZu72yDGIE93ls6JrX+ISM0S/EM92VUQBS2RU+u8erXkhRZb/Tabjub2skD2XhrOQyJRR5mobvek2uwLIdOWiSuE",
+    "storageAccountName": "[concat(uniquestring(resourceGroup().id), 'salinuxvm')]",
+    "imagePublisher": "OpenLogic",
+    "imageOffer": "CentOS",
+    "nicName": "[concat(variables('vmName'),'VMNic')]",
+    "dnsPrefix": "[concat(variables('dnsLabelPrefix'),uniquestring(resourceGroup().id))]",
+    "addressPrefix": "10.0.0.0/16",
+    "subnetName": "Subnet",
+    "subnetPrefix": "10.0.0.0/24",
+    "storageAccountType": "Standard_LRS",
+    "publicIPAddressType": "Dynamic",
+    "virtualNetworkName": "[concat(variables('vmName'),'VNET')]",
+    "subnetRef": "[resourceId('Microsoft.Network/virtualNetworks/subnets/', variables('virtualNetworkName'), variables('subnetName'))]",
+    "networkSecurityGroupName": "[concat(variables('vmName'), '_obrien_local_nsg')]",
+    "sshKeyPath": "[concat('/home/',variables('adminUsername'),'/.ssh/authorized_keys')]"
+  },
+  "resources": [
+    {
+      "type": "Microsoft.Storage/storageAccounts",
+      "name": "[variables('storageAccountName')]",
+      "apiVersion": "2017-06-01",
+      "location": "[resourceGroup().location]",
+      "sku": {
+        "name": "[variables('storageAccountType')]"
+      },
+      "kind": "Storage",
+      "properties": {}
+    },
+    {
+      "apiVersion": "2017-03-01",
+      "type": "Microsoft.Network/networkSecurityGroups",
+      "name": "[variables('networkSecurityGroupName')]",
+      "location": "[resourceGroup().location]",
+      "tags": {
+        "displayName": "NSG"
+      },
+      "properties": {
+        "securityRules": [
+          {
+            "name": "port_10249-10255_172",
+            "properties": {
+              "description": "port_10249-10255_172",
+              "protocol": "*",
+              "sourcePortRange": "*",
+              "destinationPortRange": "10249-10255",
+              "sourceAddressPrefix": "172.17.0.1/32",
+              "destinationAddressPrefix": "*",
+              "access": "Allow",
+              "priority": 120,
+              "direction": "Inbound"
+            }
+          },
+          {
+            "name": "port_10249-10255_127",
+            "properties": {
+              "description": "port_10249-10255_127",
+              "protocol": "*",
+              "sourcePortRange": "*",
+              "destinationPortRange": "10249-10255",
+              "sourceAddressPrefix": "127.0.0.1/32",
+              "destinationAddressPrefix": "*",
+              "access": "Allow",
+              "priority": 122,
+              "direction": "Inbound"
+            }
+          },
+          {
+            "name": "Port_10249-10255-block",
+            "properties": {
+              "description": "Port_10249-10255-block",
+              "protocol": "Tcp",
+              "sourcePortRange": "*",
+              "destinationPortRange": "10249-10255",
+              "sourceAddressPrefix": "Internet",
+              "destinationAddressPrefix": "*",
+              "access": "Deny",
+              "priority": 130,
+              "direction": "Inbound"
+            }
+          },
+          {
+            "name": "in-rule",
+            "properties": {
+              "description": "All in",
+              "protocol": "Tcp",
+              "sourcePortRange": "*",
+              "destinationPortRange": "*",
+              "sourceAddressPrefix": "Internet",
+              "destinationAddressPrefix": "*",
+              "access": "Allow",
+              "priority": 140,
+              "direction": "Inbound"
+            }
+          },
+          {
+            "name": "block-8080",
+            "properties": {
+              "description": "block-8080",
+              "protocol": "Tcp",
+              "sourcePortRange": "8080",
+              "destinationPortRange": "*",
+              "sourceAddressPrefix": "Internet",
+              "destinationAddressPrefix": "*",
+              "access": "Deny",
+              "priority": 104,
+              "direction": "Outbound"
+            }
+          },
+          {
+            "name": "out-rule",
+            "properties": {
+              "description": "All out",
+              "protocol": "Tcp",
+              "sourcePortRange": "*",
+              "destinationPortRange": "*",
+              "sourceAddressPrefix": "Internet",
+              "destinationAddressPrefix": "*",
+              "access": "Allow",
+              "priority": 110,
+              "direction": "Outbound"
+            }
+          }
+        ]
+      }
+    },
+    {
+      "apiVersion": "2017-04-01",
+      "type": "Microsoft.Network/virtualNetworks",
+      "name": "[variables('virtualNetworkName')]",
+      "location": "[resourceGroup().location]",
+      "dependson": [
+        "[concat('Microsoft.Network/networkSecurityGroups/', variables('networkSecurityGroupName'))]"
+      ],
+      "properties": {
+        "addressSpace": {
+          "addressPrefixes": [
+            "[variables('addressPrefix')]"
+          ]
+        },
+        "subnets": [
+          {
+            "name": "[variables('subnetName')]",
+            "properties": {
+              "addressPrefix": "[variables('subnetPrefix')]",
+              "networkSecurityGroup": {
+                "id": "[resourceId('Microsoft.Network/networkSecurityGroups', variables('networkSecurityGroupName'))]"
+              }
+            }
+          }
+        ]
+      }
+    },
+    {
+      "apiVersion": "2017-08-01",
+      "type": "Microsoft.Network/networkInterfaces",
+      "name": "[concat(variables('nicName'), copyindex())]",
+      "location": "[resourceGroup().location]",
+      "copy": {
+        "name": "nicLoop",
+        "count": "[parameters('numberOfVms')]"
+      },
+      "dependsOn": [
+        "[resourceId('Microsoft.Network/publicIPAddresses/', concat('nicLoop',copyIndex(100)))]",
+        "[resourceId('Microsoft.Network/virtualNetworks/', variables('virtualNetworkName'))]"
+      ],
+      "properties": {
+        "ipConfigurations": [
+          {
+            "name": "ipconfig1",
+            "properties": {
+              "privateIPAllocationMethod": "Dynamic",
+              "publicIPAddress": {
+                "id": "[resourceId('Microsoft.Network/publicIPAddresses', concat('nicLoop',copyIndex(100)))]"
+              },
+              "subnet": {
+                "id": "[variables('subnetRef')]"
+              }
+            }
+          }
+        ]
+      }
+    },
+    {
+      "apiVersion": "2017-04-01",
+      "type": "Microsoft.Network/publicIPAddresses",
+      "name": "[concat('nicLoop',copyIndex(100))]",
+      "location": "[resourceGroup().location]",
+      "copy": {
+        "name": "nicLoop",
+        "count": 3
+      },
+      "properties": {
+        "publicIPAllocationMethod": "Dynamic",
+        "dnsSettings": {
+          "domainNameLabel": "[concat('vmname', copyIndex(100))]"
+        }
+      }
+    },
+    {
+      "apiVersion": "2017-03-30",
+      "type": "Microsoft.Compute/virtualMachines",
+      "name": "[concat(variables('vmName'), copyindex())]",
+      "copy": {
+        "name": "virtualMachineLoop",
+        "count": "[parameters('numberOfVms')]"
+      },
+      "location": "[resourceGroup().location]",
+      "dependsOn": [
+        "nicLoop"
+      ],
+      "properties": {
+        "hardwareProfile": {
+          "vmSize": "[parameters('vmSize')]"
+        },
+        "osProfile": {
+          "computerName": "[variables('vmName')]",
+          "adminUsername": "[variables('adminUsername')]",
+          "linuxConfiguration": {
+            "disablePasswordAuthentication": true,
+            "ssh": {
+              "publicKeys": [
+                {
+                  "path": "[variables('sshKeyPath')]",
+                  "keyData": "[variables('sshKeyData')]"
+                }
+              ]
+            }
+          }
+        },
+        "storageProfile": {
+          "imageReference": {
+            "publisher": "[variables('imagePublisher')]",
+            "offer": "[variables('imageOffer')]",
+            "sku": "[parameters('centosOSVersion')]",
+            "version": "latest"
+          },
+          "osDisk": {
+            "diskSizeGB": 127,
+            "createOption": "FromImage"
+          }
+        },
+        "networkProfile": {
+          "networkInterfaces": [
+            {
+              "id": "[resourceId('Microsoft.Network/networkInterfaces',concat(variables('nicName'),copyindex()))]"
+            }
+          ]
+        },
+        "diagnosticsProfile": {
+          "bootDiagnostics": {
+            "enabled": true,
+            "storageUri": "[concat(reference(concat('Microsoft.Storage/storageAccounts/', variables('storageAccountName')), '2016-01-01').primaryEndpoints.blob)]"
+          }
+        }
+      }
+    }
+  ]
+}

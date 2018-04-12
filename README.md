@@ -1,0 +1,1 @@
+# Azure-multi-VM-PublicIP
